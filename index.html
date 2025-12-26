@@ -1,66 +1,75 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8"/>
-  <title>Hydraulic Design – Free Version</title>
-  <link rel="stylesheet" hrefist/leaflet.css
-  <style>
-    #map { height: 80vh; width: 100%; }
-    #panel { padding: 8px; font-family: system-ui; }
-    pre { background: #f7f7f8; border: 1px solid #ddd; padding: 8px; max-height: 30vh; overflow: auto; }
-    button { margin-right: 8px; }
+  <meta charset="utf-8" />
+  <title>Leaflet + OpenTopoData Elevation</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+
+  <!-- Leaflet CSS -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4MxwzUjCJKq6rUojA+eEoRrQGZo4PM6cPcZ3qxR0XQ="
+    crossorigin=""
+ ex: 1000;
+      background: white; padding: 8px 10px; border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,.1);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    }
   </style>
 </head>
 <body>
-  <div id="panel">
-    <button id="clear">Clear</button>
-    <button id="downloadInp">Download INP</button>
-    <span id="count"></span>
-    <pre id="log"></pre>
-  </div>
   <div id="map"></div>
+  <div class="info">Click anywhere to get elevation (dataset: <span id="dataset">srtm90m</span>)</div>
 
-  https://unpkg.com/leaflet/dist/leaflet.js</script>
-  <script>
-    // ← Ganti dengan URL awam dari Sel D (cloudflared) di Colab:
-    const CLOUD_API_BASE = "https://pansophically-interradial-jimena.ngrok-free.dev";
+  <!-- Leaflet JS -->
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-pOw0NZg6Su3A1u9V5qzI0XhJf7FBzSRcN44C3vDq9Ck="
+    crossorigin=""
+  const dataset = "srtm90m"; // change here to test other datasets
+    document.getElementById("dataset").textContent = dataset;
 
-    let map = L.map('map').setView([13.7563, 100.5018], 12);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OpenStreetMap contributors'
+    // Initialize map
+    const map = L.map("map").setView([20, 0], 2);
+
+    // Basemap (OpenStreetMap tiles)
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 18,
+      attribution: "&copy; OpenStreetMap contributors"
     }).addTo(map);
 
-    let nodes = [];
-    map.on('click', async (e) => {
-      const lat = e.latlng.lat, lng = e.latlng.lng;
-      const elevResp = await fetch(`${CLOUD_API_BASE}/api/elev?lat=${lat}&lng=${lng}`);
-      const elevData = await elevResp.json();
-      const elev = elevData.elevation;
-      const id = `N${nodes.length+1}`;
-      nodes.push({id, lat, lng, elev});
-      L.marker([lat, lng]).addTo(map).bindPopup(`${id}<br>Elev: ${elev?.toFixed(2)} m`);
-      updateLog();
-    });
+    let marker = null;
 
-    function updateLog(){
-      document.getElementById("log").textContent = JSON.stringify(nodes, null, 2);
-      document.getElementById("count").textContent = `Nodes: ${nodes.length}`;
+    async function fetchElevation(lat, lon) {
+      const url = `${proxyBase}/elevation?lat=${lat}&lon=${lon}&dataset=${dataset}`;
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error(`Server returned ${resp.status}`);
+      return await resp.json();
     }
 
-    document.getElementById("clear").onclick = ()=>{ nodes=[]; updateLog(); };
-
-    document.getElementById("downloadInp").onclick = async ()=>{
-      const r = await fetch(`${CLOUD_API_BASE}/api/build_inp`, {
-        method:"POST", headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({nodes})
-      });
-      const out = await r.json();
-      const blob = new Blob([out.inp], {type:"text/plain"});
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = "network.inp";
-      a.click();
-    };
+    map.on("click", async (e) => {
+      const { lat, lng } = e.latlng;
+      try {
+        const data = await fetchElevation(lat, lng);
+        const elev = data.elevation;
+        const txt = (elev !== null && elev !== undefined)
+          ? `Elevation: <b>${elev.toLocaleString()}</b> m`
+          : "Elevation not available";
+        if (marker) map.removeLayer(marker);
+        marker = L.marker([lat, lng]).addTo(map).bindPopup(`
+          <div>
+            <div><b>Latitude:</b> ${lat.toFixed(6)}</div>
+            <div><b>Longitude:</b> ${lng.toFixed(6)}</div>
+            <div>${txt}</div>
+            <div style="margin-top:6px;font-size:.9em;color:#555;">
+              Dataset: ${data.dataset}
+            </div>
+          </div>
+        `).openPopup();
+      } catch (err) {
+        alert("Error fetching elevation: " + err.message);
+      }
+    });
   </script>
 </body>
 </html>
